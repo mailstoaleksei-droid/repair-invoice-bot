@@ -1,6 +1,8 @@
 """Repair Invoice Bot — Telegram entry point."""
 
+import asyncio
 import logging
+import threading
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
@@ -17,6 +19,9 @@ logging.basicConfig(
     level=logging.INFO,
 )
 log = logging.getLogger(__name__)
+
+# Lock to prevent concurrent processing
+_processing_lock = threading.Lock()
 
 
 # ── Access control ────────────────────────────────────────
@@ -53,8 +58,29 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 async def cmd_health(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not _allowed(update.effective_user.id):
         return
-    # TODO: ping DB + OpenAI
-    await update.message.reply_text("✅ Bot is running.")
+    lines = ["✅ Bot is running."]
+
+    # Check DB
+    try:
+        from src.modules.db import get_connection
+        conn = get_connection()
+        conn.cursor().execute("SELECT 1")
+        conn.close()
+        lines.append("✅ PostgreSQL connected.")
+    except Exception as e:
+        lines.append(f"❌ PostgreSQL: {e}")
+
+    # Check OpenAI
+    try:
+        from openai import OpenAI
+        from src.config import OPENAI_API_KEY
+        client = OpenAI(api_key=OPENAI_API_KEY)
+        client.models.list()
+        lines.append("✅ OpenAI API reachable.")
+    except Exception as e:
+        lines.append(f"❌ OpenAI: {e}")
+
+    await update.message.reply_text("\n".join(lines))
 
 
 # ── /cost ─────────────────────────────────────────────────
@@ -63,8 +89,14 @@ async def cmd_health(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 async def cmd_cost(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not _allowed(update.effective_user.id):
         return
-    # TODO: read today's cost from processing_log
-    await update.message.reply_text("💰 Расходы: $0.00 / 0 счетов (сегодня)")
+    try:
+        from src.modules.db import get_connection, get_today_cost
+        conn = get_connection()
+        cost, count = get_today_cost(conn)
+        conn.close()
+        await update.message.reply_text(f"💰 Сегодня: ${cost:.4f} / {count} счетов")
+    except Exception as e:
+        await update.message.reply_text(f"💰 Ошибка: {e}")
 
 
 # ── Callback: scan folder ─────────────────────────────────
@@ -112,19 +144,72 @@ async def _handle_scan(query, ctx) -> None:
 
 
 async def _handle_process(query, ctx) -> None:
-    await query.edit_message_text("⏳ Запуск обработки...")
-    # TODO: call pipeline orchestrator
-    await query.edit_message_text("🚧 Pipeline ещё не реализован (Phase 1).")
+    # Prevent concurrent runs
+    if not _processing_lock.acquire(blocking=False):
+        await query.edit_message_text("⏳ Обработка уже идёт. Подождите.")
+        return
+
+    try:
+        msg = await query.edit_message_text("⏳ Запуск обработки...")
+
+        from src.modules.pipeline import process_batch
+
+        # Progress callback: update the same message
+        progress_lines: list[str] = []
+
+        def on_progress(done: int, total: int, line: str):
+            progress_lines.append(line)
+            # Keep last 10 lines
+            visible = progress_lines[-10:]
+            text = f"📄 Обработка: {done}/{total}\n\n" + "\n".join(visible)
+            try:
+                asyncio.get_event_loop().run_until_complete(
+                    msg.edit_text(text)
+                )
+            except Exception:
+                pass  # ignore edit conflicts
+
+        result = await process_batch(progress_cb=None)  # TODO: wire progress_cb properly
+
+        # Summary
+        summary = (
+            f"✅ Обработка завершена\n\n"
+            f"✓ {result.success} успешно\n"
+            f"⚠ {result.review} требует проверки\n"
+            f"✗ {result.manual} в manual/\n"
+            f"❌ {result.errors} ошибок\n\n"
+            f"💰 Стоимость: ${result.total_cost:.4f}"
+        )
+
+        if result.cost_limit_hit:
+            summary = "⚠️ Дневной лимит расходов достигнут. Попробуйте завтра."
+
+        keyboard = InlineKeyboardMarkup(
+            [[InlineKeyboardButton("🏠 Главное меню", callback_data="start_menu")]]
+        )
+        await msg.edit_text(summary, reply_markup=keyboard)
+
+        # Send Excel file
+        if result.excel_path and result.excel_path.exists():
+            caption = f"✓ {result.success} | ⚠ {result.review} | ✗ {result.manual} | ${result.total_cost:.2f}"
+            await ctx.bot.send_document(
+                chat_id=query.message.chat_id,
+                document=open(result.excel_path, "rb"),
+                filename=result.excel_path.name,
+                caption=caption,
+            )
+
+    except Exception as e:
+        log.exception("Processing failed")
+        await query.edit_message_text(f"❌ Ошибка обработки: {e}")
+    finally:
+        _processing_lock.release()
 
 
 async def _handle_manual(query, ctx) -> None:
-    from src.config import MANUAL_FOLDER
+    from src.modules.file_manager import list_manual_files
 
-    if not MANUAL_FOLDER.exists():
-        await query.edit_message_text("📁 Папка manual/ пуста.")
-        return
-
-    files = list(MANUAL_FOLDER.glob("*.pdf"))
+    files = list_manual_files()
     if not files:
         await query.edit_message_text("📁 Папка manual/ пуста.")
         return
