@@ -13,3 +13,4 @@
 - Added AI folder audit covering duplicate projects, checklist/GitHub status, and storage recommendations.
 - Updated AI folder audit after preparing local Git/checklists for Staack, Groo Automation, Bonus Calculator, and Groo Tarifrechner.
 - Documented Groo Automation scheduled launcher restoration in the AI folder audit.
+- Deleted duplicate invoice project folders after saving a local cleanup archive and added AI-root follow-up documents for GitHub repo creation and Cloud Runner planning.

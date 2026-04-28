@@ -5,15 +5,15 @@ Root: `C:\Users\Aleksei Samosvat\Groo GmbH\Intranet - Groo GmbH - Dokumente\Groo
 ## Overall
 
 - Active invoice project: `Repair Eingang Bot`.
-- Main duplicate risk: `pdf_processor_project` and `repair-invoice-bot` overlap with the invoice project.
+- Duplicate cleanup completed: `pdf_processor_project` and `repair-invoice-bot` were removed from the AI root after saving a local cleanup archive.
 - Several folders have no local `.git` repository and no project checklist; they should be archived or normalized.
 - Recommended standard for every active project: `README.md`, project checklist, `.env.example`, `.gitignore`, GitHub remote, run script, operations notes.
 
 ## Projects
 
 - `Repair Eingang Bot`: active invoice/PDF project. GitHub: yes, `mailstoaleksei-droid/repair-invoice-bot`. Checklist: yes. Keep.
-- `repair-invoice-bot`: duplicate/older clone of the same invoice project and same GitHub remote. Archive or delete after confirming no unique files are needed.
-- `pdf_processor_project`: old invoice/PDF processor copy with legacy Telegram and processor files. Archive or delete after final comparison with `Repair Eingang Bot`.
+- `repair-invoice-bot`: removed from AI root. Uncommitted status, patch, selected untracked files, and manifest were saved in `AI\_archive\duplicate_cleanup_20260428_154926`.
+- `pdf_processor_project`: removed from AI root. Markdown docs and manifest were saved in `AI\_archive\duplicate_cleanup_20260428_154926`.
 - `Staack_Report`: separate Staack downloader/report bot. Git repository exists; `PROJECT_CHECKLIST.md` added and GitHub remote `github` prepared as `mailstoaleksei-droid/staack-report`. Current Windows task `StaackBot` points to `Groo Forest GmbH\Bot`, not this AI folder, so production folder needs confirmation.
 - `Arbeitszeitplan der Fahrer - LKW`: LKW report bot copies exist in multiple places. Active Windows tasks point to `C:\Users\Aleksei Samosvat\Groo GmbH\Intranet - Groo GmbH - Dokumente\Fahrer\Arbeitszeitplan der Fahrer - LKW\lkw_report_bot`; AI copy should be treated as duplicate/archive unless proven otherwise.
 - `Groo_automation`: local Git repository initialized, `PROJECT_CHECKLIST.md` and `README.md` added, `origin` prepared as `mailstoaleksei-droid/groo-automation`. Missing scheduled entry point `run_monthly_report.bat` was restored; end-to-end live test still needed.
@@ -35,3 +35,8 @@ Root: `C:\Users\Aleksei Samosvat\Groo GmbH\Intranet - Groo GmbH - Dokumente\Groo
 - `mailstoaleksei-droid/groo-automation`
 - `mailstoaleksei-droid/bonus-calculator`
 - `mailstoaleksei-droid/groo-tarifrechner`
+
+Helper files in AI root:
+- `GITHUB_REPOS_TO_CREATE_2026-04-28.md`
+- `PUSH_PROJECT_REPOS_AFTER_GITHUB_CREATE.ps1`
+- `CLOUD_RUNNER_PLAN_2026-04-28.md`
