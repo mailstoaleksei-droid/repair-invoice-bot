@@ -14,11 +14,11 @@ Root: `C:\Users\Aleksei Samosvat\Groo GmbH\Intranet - Groo GmbH - Dokumente\Groo
 - `Repair Eingang Bot`: active invoice/PDF project. GitHub: yes, `mailstoaleksei-droid/repair-invoice-bot`. Checklist: yes. Keep.
 - `repair-invoice-bot`: removed from AI root. Uncommitted status, patch, selected untracked files, and manifest were saved in `AI\_archive\duplicate_cleanup_20260428_154926`.
 - `pdf_processor_project`: removed from AI root. Markdown docs and manifest were saved in `AI\_archive\duplicate_cleanup_20260428_154926`.
-- `Staack_Report`: separate Staack downloader/report bot. Git repository exists; `PROJECT_CHECKLIST.md` added and GitHub remote `github` prepared as `mailstoaleksei-droid/staack-report`. Current Windows task `StaackBot` points to `Groo Forest GmbH\Bot`, not this AI folder, so production folder needs confirmation.
+- `Staack_Report`: separate Staack downloader/report bot. GitHub repo created and pushed: `mailstoaleksei-droid/staack-report`. Current Windows task `StaackBot` points to `Groo Forest GmbH\Bot`, not this AI folder, so production folder needs confirmation. Local working tree still contains pre-existing uncommitted Staack changes.
 - `Arbeitszeitplan der Fahrer - LKW`: LKW report bot copies exist in multiple places. Active Windows tasks point to `C:\Users\Aleksei Samosvat\Groo GmbH\Intranet - Groo GmbH - Dokumente\Fahrer\Arbeitszeitplan der Fahrer - LKW\lkw_report_bot`; AI copy should be treated as duplicate/archive unless proven otherwise.
-- `Groo_automation`: local Git repository initialized, `PROJECT_CHECKLIST.md` and `README.md` added, `origin` prepared as `mailstoaleksei-droid/groo-automation`. Missing scheduled entry point `run_monthly_report.bat` was restored; end-to-end live test still needed.
-- `bonus_calculator`: local Git repository initialized, `PROJECT_CHECKLIST.md` added, `origin` prepared as `mailstoaleksei-droid/bonus-calculator`. `venv`, logs, backups, generated outputs, and Excel workbooks are excluded.
-- `GrooTarifrechner`: local Git repository initialized, `PROJECT_CHECKLIST.md` and `README.md` added, `origin` prepared as `mailstoaleksei-droid/groo-tarifrechner`. Production HTML version still needs confirmation.
+- `Groo_automation`: GitHub repo created and pushed: `mailstoaleksei-droid/groo-automation`. Missing scheduled entry point `run_monthly_report.bat` was restored; end-to-end live test still needed.
+- `bonus_calculator`: GitHub repo created and pushed: `mailstoaleksei-droid/bonus-calculator`. `venv`, logs, backups, generated outputs, and Excel workbooks are excluded.
+- `GrooTarifrechner`: GitHub repo created and pushed: `mailstoaleksei-droid/groo-tarifrechner`. Production HTML version still needs confirmation.
 - `BONUS`, `Calc cost LKW`, `Fehrer_Container_LKW_Tag_Euro`, `Invoice`, `LKW rent price`, `YF_Report`: no confirmed Git/checklist from audit. Mark as unknown/legacy until owner confirms active use.
 
 ## Improvements
@@ -30,7 +30,7 @@ Root: `C:\Users\Aleksei Samosvat\Groo GmbH\Intranet - Groo GmbH - Dokumente\Groo
 
 ## GitHub Status
 
-- GitHub repositories still need to be created before push:
+- GitHub repositories created and initial `main` branch pushed:
 - `mailstoaleksei-droid/staack-report`
 - `mailstoaleksei-droid/groo-automation`
 - `mailstoaleksei-droid/bonus-calculator`
