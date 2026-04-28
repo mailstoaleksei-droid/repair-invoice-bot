@@ -23,3 +23,13 @@ This stages changes, appends a timestamped sync line to the live checklist, comm
 - The incoming data source remains `Eingangs Rechnungen\EingangsRG`.
 - The `manual` subfolder is not part of the normal incoming batch.
 - AI should remain enabled for production-level automation targets.
+
+## Weekly automatic run
+
+- Scheduled task name: `Repair Eingang Bot Weekly Invoice Processing`
+- Schedule: every Monday at `09:00`
+- Script: `weekly_process_invoices.ps1`
+- The script checks only the root of `EingangsRG`; files in `manual` are excluded from the automatic batch.
+- If PDF files are found, it runs `process_pdf_v7_3.py` with `OPENAI_ENABLED=true`, `TELEGRAM_ENABLED=true`, and `PROCESSING_MODE=report_only`.
+- The final processing report is sent by the current processor to `PDF Processor Bot` when `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` are configured in `.env`.
+- Install or refresh the Windows task with `install_weekly_task.cmd`; it calls `install_weekly_task.ps1` to avoid path quoting issues.

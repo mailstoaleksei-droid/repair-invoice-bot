@@ -8,6 +8,8 @@
 - [ ] Переход от общего аудита к итеративной доработке на реальных текущих счетах
 - [ ] Проверка первого полного AI-отчета пользователем и фиксация ошибок по строкам/поставщикам
 - [x] Исправление счетчика `AI Assisted`, который теперь считает уникальные счета, а не повторные AI-вызовы
+- [x] Добавлен недельный автозапуск проверки `EingangsRG` по понедельникам в 09:00 через Windows Scheduled Task
+- [x] Зафиксирована цель 95%+ и правила работы с `Review Queue` для ручных ошибок
 
 ## B. Следующий шаг
 
@@ -16,6 +18,8 @@
 - [ ] Отдельно проверить multi-truck счета, где должна быть одна строка на одну машину
 - [ ] Разобрать 3 необработанных файла и понять, нужен ли OCR или отдельный parser
 - [ ] После замечаний пользователя править алгоритм по одному поставщику за итерацию и повторять прогон
+- [ ] Добавлять каждую подтвержденную ручную ошибку в checklist/GitHub issue, чтобы она стала regression case
+- [ ] Проверить, что `.env` содержит Telegram credentials для автоматической отправки еженедельного отчета в `PDF Processor Bot`
 
 ## C. Последний результат прогона
 
@@ -90,6 +94,10 @@
 - [x] Подтвержден рабочий AI-прогон `2026-04-28`: `107` обработано, `1` не обработан, AI реально участвовал в pipeline
 - [x] Добавлен отдельный лист `Review Queue` в Excel-отчет для ручной проверки проблемных или частично обработанных счетов
 - [x] Добавлен helper `sync_project_state.ps1` для сохранения чеклиста и git sync
+- [x] Добавлен `weekly_process_invoices.ps1` для автоматической еженедельной AI-обработки PDF из `EingangsRG`
+- [x] Добавлен `install_weekly_task.cmd` для установки Windows Scheduled Task на понедельник 09:00
+- [x] Добавлен `install_weekly_task.ps1`, чтобы установка Scheduled Task работала с пробелами в OneDrive/SharePoint пути
+- [x] Добавлен аудит папки `AI` от `2026-04-28` с перечнем дублей, GitHub/checklist статуса и рекомендациями
 
 ## 1. Критическая стабилизация
 
@@ -159,3 +167,14 @@
 - [ ] Добавить `OPERATIONS.md` для работы с папками, логами и Telegram-ботом
 - [ ] Добавить `CHANGELOG.md`
 - [ ] Синхронизировать локальную рабочую папку и GitHub-репозиторий
+
+## 9. Weekly automation and 95% target
+
+- [x] Weekly Monday 09:00 automation script exists
+- [x] Weekly automation excludes `manual`
+- [x] Weekly automation forces OpenAI-enabled processing
+- [x] Weekly automation uses current final Telegram summary when Telegram credentials are configured
+- [ ] Confirm Windows Scheduled Task is installed on the production PC
+- [ ] Add KPI history file or database table for weekly `total`, `processed`, `partial`, `manual`, `errors`, `ai_assisted`
+- [ ] Convert every manually corrected invoice from `Review Queue` into a supplier rule, OCR case, truck mapping, or regression test
+- [ ] Reach and sustain `>=95%` automatic processing for 4 consecutive weekly batches

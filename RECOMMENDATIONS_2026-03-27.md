@@ -75,3 +75,13 @@ AI-расширение:
 - confidence-based routing
 - полуавтоматическая review-очередь
 - постепенный переход от regex-only к hybrid pipeline
+
+## Рекомендации для цели 95%+
+
+- Оставить активным только `PDF Processor Bot`: он связан с текущим полным циклом обработки PDF, OpenAI fallback, Excel-отчетом и `Review Queue`.
+- Старый Telegram-чат/бот `Repair` считать legacy: удалить можно после проверки, что в нем не осталось нужной истории или пользователей.
+- Автозапуск делать 1 раз в неделю: каждый понедельник в `09:00` проверять `EingangsRG`, исключать `manual`, при наличии PDF запускать AI-enabled обработку и отправлять итог в Telegram.
+- Целевой KPI считать по каждому batch: `processed / total >= 95%`, отдельно вести `partial`, `manual`, `duplicates`, `processing_error`, `empty_pdf`.
+- Все счета из `Review Queue` после ручной проверки должны превращаться в улучшения правил: новый supplier rule, OCR-case, NETTO/BRUTTO fix, truck mapping или regression test.
+- Ошибки после ручной проверки лучше фиксировать не только в Telegram, а в этом проекте: комментарий здесь или GitHub issue. Telegram нужен для оперативного уведомления, но сам по себе не обновляет checklist, код и GitHub.
+- Для выхода на 95% нужны обязательные regression tests по проблемным поставщикам, OCR fallback для сканов, supplier registry, confidence thresholds и ежемесячная статистика причин ручной обработки.
