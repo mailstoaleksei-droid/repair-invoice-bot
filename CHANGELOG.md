@@ -11,3 +11,4 @@
 - Documented the 95%+ automation target, bot ownership, and manual-error feedback flow.
 - Fixed Scheduled Task installation to handle project paths with spaces.
 - Added AI folder audit covering duplicate projects, checklist/GitHub status, and storage recommendations.
+- Updated AI folder audit after preparing local Git/checklists for Staack, Groo Automation, Bonus Calculator, and Groo Tarifrechner.
