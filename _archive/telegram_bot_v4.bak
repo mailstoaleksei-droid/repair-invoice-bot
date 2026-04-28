@@ -1,0 +1,540 @@
+"""
+TELEGRAM BOT v4.0 - С UNIFIED TELEGRAM
+Бот для управления обработкой PDF счетов
+Обновления:
+- Использует unified_telegram.py
+- Исправлен infinity polling
+- Улучшена обработка ошибок
+- Поддержка process_pdf_v7_2.py
+"""
+
+import os
+import sys
+import subprocess
+import threading
+from datetime import datetime
+from telebot import types
+
+# ===== ИМПОРТ UNIFIED TELEGRAM =====
+try:
+    from unified_telegram import create_client
+    TELEGRAM_ENABLED = True
+except ImportError as e:
+    TELEGRAM_ENABLED = False
+    print(f"❌ Ошибка импорта unified_telegram: {e}")
+    print("Убедитесь что unified_telegram.py в той же папке")
+    sys.exit(1)
+
+# Импорт модуля мониторинга
+try:
+    from file_monitor import FileMonitor, format_file_size
+    MONITOR_AVAILABLE = True
+except ImportError:
+    MONITOR_AVAILABLE = False
+    print("⚠️ Модуль file_monitor.py не найден. Автомониторинг недоступен.")
+
+# ===== НАСТРОЙКИ БОТА =====
+TELEGRAM_BOT_TOKEN = "8127115250:AAHmDuiiRuPSpE6oSwHzmUpSl2-DzVSr3Io"
+TELEGRAM_CHAT_ID = "745125435"
+
+# Создаем клиента через unified_telegram
+telegram = create_client(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, throttle_interval=2.0)
+bot = telegram.bot  # Получаем экземпляр бота для обработчиков
+
+# Пути к скриптам и папкам
+SCRIPT_PATH = r"C:\Users\Aleksei Samosvat\Groo GmbH\Intranet - Groo GmbH - Dokumente\Auto Compass GmbH\AC - Fahrzeuge\Ablage\Eingangs Rechnungen\PDF_Processor\process_pdf_v7_2.py"
+PDF_FOLDER = r"C:\Users\Aleksei Samosvat\Groo GmbH\Intranet - Groo GmbH - Dokumente\Auto Compass GmbH\AC - Fahrzeuge\Ablage\Eingangs Rechnungen\EingangsRG"
+MANUAL_FOLDER = r"C:\Users\Aleksei Samosvat\Groo GmbH\Intranet - Groo GmbH - Dokumente\Auto Compass GmbH\AC - Fahrzeuge\Ablage\Eingangs Rechnungen\EingangsRG\manual"
+PROCESSED_FOLDER = r"C:\Users\Aleksei Samosvat\Groo GmbH\Intranet - Groo GmbH - Dokumente\Auto Compass GmbH\AC - Fahrzeuge\Ablage\Eingangs Rechnungen\RG 2025 Ersatyteile RepRG"
+
+# Глобальные переменные
+processing_status = {
+    'is_running': False,
+    'start_time': None,
+    'last_run': None,
+    'last_results': None
+}
+
+# Мониторинг файлов
+file_monitor = None
+monitor_settings = {
+    'enabled': False,
+    'auto_process': False
+}
+
+
+# ===== ФУНКЦИИ МОНИТОРИНГА =====
+
+def init_file_monitor():
+    """Инициализировать мониторинг файлов"""
+    global file_monitor
+    
+    if not MONITOR_AVAILABLE:
+        return False
+    
+    try:
+        if file_monitor is None:
+            file_monitor = FileMonitor(PDF_FOLDER, on_new_file_detected)
+        return True
+    except Exception as e:
+        print(f"Ошибка инициализации мониторинга: {e}")
+        return False
+
+
+def on_new_file_detected(file_path, filename, file_size):
+    """Callback при обнаружении нового файла"""
+    try:
+        # Отправить уведомление через unified_telegram
+        timestamp = datetime.now().strftime('%H:%M:%S')
+        telegram.notify_new_file(filename, file_size, timestamp)
+        
+        # Если включена автообработка
+        if monitor_settings.get('auto_process', False):
+            import time
+            time.sleep(2)
+            
+            # Создать фейковое сообщение для запуска обработки
+            class FakeMessage:
+                chat = type('obj', (object,), {'id': TELEGRAM_CHAT_ID})
+            
+            process_pdfs(FakeMessage())
+            
+    except Exception as e:
+        print(f"Ошибка обработки нового файла: {e}")
+
+
+def start_monitor():
+    """Запустить мониторинг"""
+    global file_monitor, monitor_settings
+    
+    if not MONITOR_AVAILABLE:
+        return False, "Модуль file_monitor не найден"
+    
+    try:
+        if file_monitor is None:
+            if not init_file_monitor():
+                return False, "Ошибка инициализации"
+        
+        file_monitor.start()
+        monitor_settings['enabled'] = True
+        return True, "Мониторинг запущен"
+        
+    except Exception as e:
+        return False, str(e)
+
+
+def stop_monitor():
+    """Остановить мониторинг"""
+    global file_monitor, monitor_settings
+    
+    try:
+        if file_monitor:
+            file_monitor.stop()
+            monitor_settings['enabled'] = False
+            return True, "Мониторинг остановлен"
+        return False, "Мониторинг не запущен"
+    except Exception as e:
+        return False, str(e)
+
+
+# ===== КЛАВИАТУРА =====
+
+def get_main_keyboard():
+    """Главная клавиатура"""
+    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    
+    btn1 = types.KeyboardButton('🔄 Обработать PDF')
+    btn2 = types.KeyboardButton('📊 Статус')
+    btn3 = types.KeyboardButton('🔍 Мониторинг')
+    btn4 = types.KeyboardButton('ℹ️ Помощь')
+    
+    keyboard.add(btn1, btn2)
+    keyboard.add(btn3, btn4)
+    
+    return keyboard
+
+
+def get_monitor_keyboard():
+    """Клавиатура мониторинга"""
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    
+    if monitor_settings['enabled']:
+        markup.add(
+            types.InlineKeyboardButton("⏸️ Остановить", callback_data="monitor_stop"),
+            types.InlineKeyboardButton("📊 Статус", callback_data="monitor_status")
+        )
+        
+        auto_text = "🤖 Выкл автообработку" if monitor_settings['auto_process'] else "🤖 Вкл автообработку"
+        markup.add(types.InlineKeyboardButton(auto_text, callback_data="monitor_toggle_auto"))
+    else:
+        markup.add(types.InlineKeyboardButton("▶️ Запустить", callback_data="monitor_start"))
+    
+    markup.add(types.InlineKeyboardButton("🔙 Назад", callback_data="back_to_main"))
+    
+    return markup
+
+
+# ===== ОБРАБОТЧИКИ КОМАНД =====
+
+@bot.message_handler(commands=['start'])
+def send_welcome(message):
+    """Приветствие"""
+    welcome_text = (
+        "👋 <b>Добро пожаловать в PDF Processor Bot v4.0!</b>\n\n"
+        "🤖 Я помогу автоматизировать обработку PDF счетов\n\n"
+        "<b>Возможности:</b>\n"
+        "🔄 Обработка PDF файлов\n"
+        "📊 Статус системы\n"
+        "🔍 Автоматический мониторинг\n"
+        "📈 Детальные уведомления\n\n"
+        "Используйте кнопки меню для работы!"
+    )
+    
+    bot.send_message(
+        message.chat.id,
+        welcome_text,
+        reply_markup=get_main_keyboard(),
+        parse_mode='HTML'
+    )
+
+
+@bot.message_handler(commands=['help'])
+def show_help(message):
+    """Помощь"""
+    help_text = (
+        "ℹ️ <b>Справка по боту</b>\n\n"
+        "<b>🔄 Обработать PDF</b>\n"
+        "Запустить обработку всех PDF файлов в папке EingangsRG\n\n"
+        "<b>📊 Статус</b>\n"
+        "Показать текущее состояние системы, количество файлов\n\n"
+        "<b>🔍 Мониторинг</b>\n"
+        "Автоматическое отслеживание новых PDF файлов\n"
+        "Можно включить автоматическую обработку\n\n"
+        "<b>Версия:</b> 4.0\n"
+        "<b>Процессор:</b> v5.0 (unified_telegram)\n"
+        "<b>Поддержка:</b> 16+ поставщиков"
+    )
+    
+    bot.send_message(message.chat.id, help_text, parse_mode='HTML')
+
+
+@bot.message_handler(func=lambda message: message.text == 'ℹ️ Помощь')
+def help_button(message):
+    """Кнопка помощи"""
+    show_help(message)
+
+
+@bot.message_handler(func=lambda message: message.text == '🔄 Обработать PDF')
+def process_pdfs(message):
+    """Обработать PDF файлы"""
+    
+    if processing_status['is_running']:
+        bot.send_message(
+            message.chat.id,
+            "⚠️ Обработка уже запущена!\nДождитесь завершения."
+        )
+        return
+    
+    # Проверить наличие файлов
+    try:
+        pdf_files = [f for f in os.listdir(PDF_FOLDER) if f.lower().endswith('.pdf')]
+        pdf_count = len(pdf_files)
+    except Exception as e:
+        bot.send_message(
+            message.chat.id,
+            f"❌ Ошибка доступа к папке:\n{e}"
+        )
+        return
+    
+    if pdf_count == 0:
+        bot.send_message(
+            message.chat.id,
+            "📭 <b>Нет файлов для обработки</b>\n\n"
+            "Папка EingangsRG пуста",
+            parse_mode='HTML'
+        )
+        return
+    
+    # Уведомление о начале
+    telegram.notify_processing_batch(pdf_count)
+    
+    processing_status['is_running'] = True
+    processing_status['start_time'] = datetime.now()
+    
+    # Запуск обработки в отдельном потоке
+    def run_processing():
+        try:
+            # Запуск process_pdf_v7_2.py
+            result = subprocess.run(
+                [sys.executable, SCRIPT_PATH],
+                capture_output=True,
+                text=True,
+                encoding='utf-8',
+                timeout=600,
+                cwd=os.path.dirname(SCRIPT_PATH)
+            )
+            
+            output = result.stdout
+            errors = result.stderr
+            
+            # Парсинг результатов из вывода
+            processed = 0
+            duplicates = 0
+            manual = 0
+            
+            for line in output.split('\n'):
+                if 'Обработано успешно:' in line or '✓ Обработано успешно:' in line:
+                    try:
+                        processed = int(line.split(':')[-1].strip())
+                    except:
+                        pass
+                elif 'Дубликатов:' in line or '⚠ Дубликатов:' in line:
+                    try:
+                        duplicates = int(line.split(':')[-1].strip())
+                    except:
+                        pass
+                elif 'Требуют ручной обработки:' in line or '❌ Требуют ручной обработки:' in line:
+                    try:
+                        manual = int(line.split(':')[-1].strip())
+                    except:
+                        pass
+            
+            # Сохранить результаты
+            processing_status['last_results'] = {
+                'total': pdf_count,
+                'processed': processed,
+                'duplicates': duplicates,
+                'manual': manual,
+                'time': datetime.now()
+            }
+            
+            # Если были ошибки subprocess
+            if result.returncode != 0 and errors:
+                error_msg = (
+                    f"⚠️ <b>Обработка завершена с ошибками</b>\n\n"
+                    f"❌ Код возврата: {result.returncode}\n"
+                    f"📝 Ошибка: <code>{errors[:200]}</code>\n\n"
+                    f"💡 Проверьте логи для деталей"
+                )
+                bot.send_message(TELEGRAM_CHAT_ID, error_msg, parse_mode='HTML')
+            
+            # Примечание: Детальные уведомления уже отправлены process_pdf_v7_2.py
+            # Здесь только дублирующая финальная сводка для обратной совместимости
+            
+        except subprocess.TimeoutExpired:
+            bot.send_message(
+                TELEGRAM_CHAT_ID,
+                "⚠️ <b>Таймаут обработки</b>\n\n"
+                "Обработка заняла более 10 минут\n"
+                "Проверьте состояние системы",
+                parse_mode='HTML'
+            )
+            
+        except Exception as e:
+            error_msg = (
+                f"❌ <b>Критическая ошибка</b>\n\n"
+                f"⚠️ {str(e)}\n\n"
+                f"💡 Попробуйте запустить process_pdf_v7_2.py вручную"
+            )
+            bot.send_message(TELEGRAM_CHAT_ID, error_msg, parse_mode='HTML')
+            
+        finally:
+            processing_status['is_running'] = False
+            processing_status['last_run'] = datetime.now()
+    
+    # Запуск в отдельном потоке
+    thread = threading.Thread(target=run_processing)
+    thread.daemon = True
+    thread.start()
+
+
+@bot.message_handler(func=lambda message: message.text == '📊 Статус')
+def show_status(message):
+    """Показать статус системы"""
+    
+    try:
+        pdf_count = len([f for f in os.listdir(PDF_FOLDER) if f.lower().endswith('.pdf')])
+        manual_count = len([f for f in os.listdir(MANUAL_FOLDER) if f.lower().endswith('.pdf')]) if os.path.exists(MANUAL_FOLDER) else 0
+        processed_count = len([f for f in os.listdir(PROCESSED_FOLDER) if f.lower().endswith('.pdf')]) if os.path.exists(PROCESSED_FOLDER) else 0
+        
+        status_text = "📊 <b>Статус системы</b>\n\n"
+        
+        if processing_status['is_running']:
+            elapsed = datetime.now() - processing_status['start_time']
+            minutes = int(elapsed.total_seconds() / 60)
+            seconds = int(elapsed.total_seconds() % 60)
+            status_text += f"⏳ <b>Обработка запущена</b>\n"
+            status_text += f"Прошло: {minutes}:{seconds:02d}\n\n"
+        else:
+            status_text += "✅ <b>Система готова</b>\n\n"
+        
+        status_text += "<b>📁 Файлы:</b>\n"
+        status_text += f"📥 Входящие: {pdf_count}\n"
+        status_text += f"✋ Ручная обработка: {manual_count}\n"
+        status_text += f"✅ Обработанные: {processed_count}\n\n"
+        
+        # Статус мониторинга
+        status_text += "<b>🔍 Мониторинг:</b>\n"
+        if monitor_settings['enabled'] and file_monitor:
+            mon_status = file_monitor.get_status()
+            uptime_min = int(mon_status['uptime_seconds'] / 60)
+            status_text += f"✅ Включен ({uptime_min} мин)\n"
+            status_text += f"📊 Обнаружено: {mon_status['files_detected']}\n"
+            auto_status = "✅ Вкл" if monitor_settings['auto_process'] else "⏸️ Выкл"
+            status_text += f"🤖 Автообработка: {auto_status}\n"
+        else:
+            status_text += "⏸️ Выключен\n"
+        
+        status_text += "\n"
+        
+        # Последний запуск
+        if processing_status['last_run']:
+            time_ago = datetime.now() - processing_status['last_run']
+            minutes = int(time_ago.total_seconds() / 60)
+            hours = int(minutes / 60)
+            minutes = minutes % 60
+            
+            status_text += "<b>🕐 Последний запуск:</b>\n"
+            if hours > 0:
+                status_text += f"{hours} ч {minutes} мин назад\n"
+            else:
+                status_text += f"{minutes} мин назад\n"
+            
+            # Результаты
+            if processing_status['last_results']:
+                res = processing_status['last_results']
+                status_text += f"\n<b>📈 Результаты:</b>\n"
+                status_text += f"✅ Успешно: {res['processed']}\n"
+                status_text += f"⚠️ Дубликаты: {res['duplicates']}\n"
+                status_text += f"❌ Ручные: {res['manual']}\n"
+        
+        # Статистика Telegram
+        tg_stats = telegram.get_stats()
+        status_text += f"\n<b>📱 Telegram:</b>\n"
+        status_text += f"Отправлено: {tg_stats['sent']}\n"
+        status_text += f"Ошибок: {tg_stats['failed']}\n"
+        
+        bot.send_message(message.chat.id, status_text, parse_mode='HTML')
+        
+    except Exception as e:
+        bot.send_message(
+            message.chat.id,
+            f"❌ Ошибка получения статуса:\n{e}"
+        )
+
+
+@bot.message_handler(func=lambda message: message.text == '🔍 Мониторинг')
+def show_monitoring(message):
+    """Показать настройки мониторинга"""
+    
+    if not MONITOR_AVAILABLE:
+        bot.send_message(
+            message.chat.id,
+            "❌ <b>Мониторинг недоступен</b>\n\n"
+            "Модуль file_monitor.py не найден",
+            parse_mode='HTML'
+        )
+        return
+    
+    monitor_text = "🔍 <b>Автоматический мониторинг файлов</b>\n\n"
+    
+    if monitor_settings['enabled']:
+        monitor_text += "✅ <b>Статус:</b> Включен\n\n"
+        
+        if file_monitor:
+            status = file_monitor.get_status()
+            uptime_min = int(status['uptime_seconds'] / 60)
+            monitor_text += f"⏱️ Работает: {uptime_min} мин\n"
+            monitor_text += f"📊 Обнаружено файлов: {status['files_detected']}\n"
+            monitor_text += f"📁 Папка: EingangsRG\n\n"
+        
+        auto_status = "✅ Включена" if monitor_settings['auto_process'] else "⏸️ Выключена"
+        monitor_text += f"🤖 <b>Автообработка:</b> {auto_status}\n"
+        monitor_text += "При обнаружении нового файла:\n"
+        if monitor_settings['auto_process']:
+            monitor_text += "• Автоматически запускается обработка\n"
+        else:
+            monitor_text += "• Присылается уведомление\n"
+    else:
+        monitor_text += "⏸️ <b>Статус:</b> Выключен\n\n"
+        monitor_text += "Нажмите ▶️ Запустить для активации"
+    
+    bot.send_message(
+        message.chat.id,
+        monitor_text,
+        reply_markup=get_monitor_keyboard(),
+        parse_mode='HTML'
+    )
+
+
+# ===== ОБРАБОТЧИКИ CALLBACK =====
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('monitor_'))
+def handle_monitor_callback(call):
+    """Обработка кнопок мониторинга"""
+    
+    if call.data == 'monitor_start':
+        success, msg = start_monitor()
+        if success:
+            bot.answer_callback_query(call.id, "✅ Мониторинг запущен")
+        else:
+            bot.answer_callback_query(call.id, f"❌ Ошибка: {msg}")
+        show_monitoring(call.message)
+        
+    elif call.data == 'monitor_stop':
+        success, msg = stop_monitor()
+        if success:
+            bot.answer_callback_query(call.id, "⏸️ Мониторинг остановлен")
+        else:
+            bot.answer_callback_query(call.id, f"❌ Ошибка: {msg}")
+        show_monitoring(call.message)
+        
+    elif call.data == 'monitor_status':
+        bot.answer_callback_query(call.id, "📊 Обновление статуса")
+        show_monitoring(call.message)
+        
+    elif call.data == 'monitor_toggle_auto':
+        monitor_settings['auto_process'] = not monitor_settings['auto_process']
+        status = "включена" if monitor_settings['auto_process'] else "выключена"
+        bot.answer_callback_query(call.id, f"🤖 Автообработка {status}")
+        show_monitoring(call.message)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == 'back_to_main')
+def back_to_main(call):
+    """Вернуться к главному меню"""
+    bot.answer_callback_query(call.id)
+    bot.delete_message(call.message.chat.id, call.message.message_id)
+
+
+# ===== ЗАПУСК БОТА =====
+
+if __name__ == "__main__":
+    print("="*60)
+    print("TELEGRAM BOT v4.0 - PDF PROCESSOR")
+    print("="*60)
+    print(f"Время запуска: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"Мониторинг файлов: {'✅ Доступен' if MONITOR_AVAILABLE else '❌ Недоступен'}")
+    print(f"Unified Telegram: {'✅ Подключен' if TELEGRAM_ENABLED else '❌ Ошибка'}")
+    print("="*60)
+    print("Бот запущен и ожидает команды...")
+    print("Для остановки нажмите Ctrl+C")
+    print("="*60)
+    
+    try:
+        # Запуск бота с обработкой ошибок
+        bot.infinity_polling(
+            timeout=30,
+            long_polling_timeout=30,
+            logger_level=None,  # Отключить verbose логирование
+            allowed_updates=None
+        )
+    except KeyboardInterrupt:
+        print("\n⏹️ Остановка бота...")
+        if file_monitor:
+            file_monitor.stop()
+        print("✅ Бот остановлен")
+    except Exception as e:
+        print(f"\n❌ Критическая ошибка: {e}")
+        if file_monitor:
+            file_monitor.stop()

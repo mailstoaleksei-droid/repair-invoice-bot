@@ -1,38 +1,5 @@
-# Python
-__pycache__/
-*.py[cod]
-*.egg-info/
-dist/
-build/
-.eggs/
-*.egg
-
-# Environment
 .env
-.venv/
-venv/
-env/
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# OS
-Thumbs.db
-Desktop.ini
-.DS_Store
-
-# Logs
+__pycache__/
+*.pyc
 logs/
-*.log
-
-# Test output
-.pytest_cache/
-htmlcov/
-.coverage
-
-# Generated files
-output/
-*.xlsx
+reports/

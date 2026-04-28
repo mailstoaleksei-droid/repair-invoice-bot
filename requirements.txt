@@ -1,8 +1,33 @@
-python-telegram-bot==21.10
-openai==1.68.0
-asyncpg==0.30.0
-pdfplumber==0.11.4
-pdf2image==1.17.0
-openpyxl==3.1.5
-python-dotenv==1.0.1
-tenacity==9.0.0
+# PDF PROCESSOR - Зависимости проекта
+# Версия: 3.0
+
+# ===== ОБРАБОТКА PDF =====
+pdfplumber==0.10.3          # Извлечение текста из PDF
+pdf2image==1.16.3           # Конвертация PDF в изображения (для OCR)
+
+# ===== EXCEL =====
+openpyxl==3.1.2            # Работа с Excel файлами
+python-dotenv==1.0.1      # .env конфигурация
+openai==2.30.0            # OpenAI API for AI fallback
+PyMuPDF==1.24.10          # PDF rendering for image-based AI extraction
+
+# ===== TELEGRAM BOT =====
+pyTelegramBotAPI==4.14.0   # Telegram Bot API
+
+# ===== МОНИТОРИНГ ФАЙЛОВ =====
+watchdog==3.0.0            # Отслеживание изменений в файловой системе
+
+# ===== OCR (для будущих задач) =====
+# pytesseract==0.3.10      # OCR для PDF-скриншотов
+# Pillow==10.1.0           # Обработка изображений
+
+# ===== МАШИННОЕ ОБУЧЕНИЕ (для будущих задач) =====
+# scikit-learn==1.3.2      # ML модели
+# spacy==3.7.2             # NLP для извлечения данных
+# pandas==2.1.4            # Работа с данными
+
+# ===== БАЗА ДАННЫХ (для будущих задач) =====
+# sqlite3                  # Встроен в Python
+
+# ===== УТИЛИТЫ =====
+# schedule==1.2.0          # Планировщик задач
