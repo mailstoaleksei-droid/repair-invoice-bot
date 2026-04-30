@@ -96,6 +96,7 @@
 - [x] Add shared truck normalization for `KO-HH` numbers.
 - [x] Fix Auto Compass `700415`: extract truck `GR-OO4501` from `Kennzeichen GR-OO 4501` style layouts.
 - [x] Fix Pentoplus Truck Wash `V-RE002079`: extract truck numbers from `Nummernschild`, including `GR-OO2456`, and map them to wash line items.
+- [x] Add Volvo Group Trucks Service Nord `0067816059`: extract invoice `0067816059`, truck `GR-OO1708`, invoice date `27/03/2026`, and net total `1188.18`.
 - Gutschrift → отрицательная сумма
 - Результат: Excel в Telegram + данные в PostgreSQL + PDF перемещён
 - Неразобранные → `manual/` для ручной обработки или обучения промпта

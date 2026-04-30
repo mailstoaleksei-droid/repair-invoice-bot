@@ -2,6 +2,7 @@
 
 ## 2026-04-30
 
+- Added Volvo Group Trucks Service Nord invoice support for workshop invoices such as `0067816059`: invoice from `Rechnungs-Nr..`, date from `Rech.-Datum...`, truck from `Kennzeichen...`, and net total from the `Nettosumme` summary table.
 - Fixed Auto Compass internal invoices such as `700415` to extract truck numbers from one-line header layouts like `Kennzeichen ...` followed by `GR-OO 4501`, and added support for euro-symbol total rows.
 - Added Pentoplus Truck Wash `V-RE...` invoice support with delivery-note mapping from `Lieferungsnr.` to `Leistungsnachweis` / `Nummernschild`, so wash rows can include trucks such as `GR-OO2456`.
 - Added Scania Finance `SRD...` invoice support, including `Kennzeichen: KO-HH 322` truck normalization and `Netto gesamt (EUR)` total extraction.

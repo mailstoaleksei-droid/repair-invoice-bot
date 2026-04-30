@@ -1009,21 +1009,53 @@ def extract_schutt(text):
 
 
 
-def extract_volvo(text):
+def extract_volvo_net_total(text):
+    """Extract Volvo net total from summary tables."""
+    lines = str(text or "").splitlines()
+    for index, line in enumerate(lines):
+        upper_line = line.upper()
+        if 'NETTOSUMME' not in upper_line:
+            continue
+
+        window = ' '.join(lines[index:index + 2])
+        amounts = re.findall(r'\b[\d.]+,\d{2}\b', window)
+        if not amounts:
+            continue
+
+        if 'MWST.SATZ' in upper_line and len(amounts) >= 2:
+            amount = parse_euro_amount(amounts[1])
+        else:
+            amount = parse_euro_amount(amounts[-1])
+
+        if amount > 0:
+            return amount
+
+    direct_match = re.search(r'Nettosumme\s+([\d.]+,\d{2})', str(text or ''), re.IGNORECASE)
+    if direct_match:
+        return parse_euro_amount(direct_match.group(1))
+
+    return 0.0
+
+
+def extract_volvo(text, filename=''):
     """Volvo Group Trucks Service"""
     data = {}
     
     # ÃÂÃÂ¾ÃÂ¼ÃÂµÃ‘â‚¬ Ã‘ÂÃ‘â€¡Ã‘â€˜Ã‘â€šÃÂ°
-    invoice_match = re.search(r'Rechnungs-Nr\.\.\s*:\s*(\d+)', text)
+    invoice_match = re.search(r'Rechnungs-Nr\.{0,2}\s*:\s*(\d+)', text)
     if invoice_match:
         data['invoice'] = invoice_match.group(1)
     else:
         return None
     
     # Ãâ€ÃÂ°Ã‘â€šÃÂ°
-    date_match = re.search(r'Auftr\.-Datum\.\.\s*:\s*(\d{2})\.(\d{2})\.(\d{2})', text)
+    date_match = re.search(r'Rech\.-Datum\.{0,3}\s*:\s*(\d{2})\.(\d{2})\.(\d{2,4})', text)
+    if not date_match:
+        date_match = re.search(r'Auftr\.-Datum\.{0,3}\s*:\s*(\d{2})\.(\d{2})\.(\d{2,4})', text)
     if date_match:
-        year = f"20{date_match.group(3)}"
+        year = date_match.group(3)
+        if len(year) == 2:
+            year = f"20{year}"
         date_str = f"{date_match.group(1)}.{date_match.group(2)}.{year}"
     else:
         return None
@@ -1037,29 +1069,32 @@ def extract_volvo(text):
         return None
     
     # ÃÅ“ÃÂ°Ã‘Ë†ÃÂ¸ÃÂ½ÃÂ°
-    truck_match = re.search(r'Kennzeichen\.\.\s*:\s*([A-Z]{2}-[A-Z0-9]+)', text)
+    truck_match = re.search(r'Kennzeichen\.{0,3}\s*:\s*([A-Z]{2}-[A-Z]{2,4}\s*\d{2,4})', text)
     if truck_match:
-        data['truck'] = truck_match.group(1)
+        data['truck'] = normalize_truck_candidate(truck_match.group(1))
     else:
-        data['truck'] = ''
+        data['truck'] = extract_truck_from_filename(filename) or ''
     
     # ÃÅ¾ÃÂ¿ÃÂ¸Ã‘ÂÃÂ°ÃÂ½ÃÂ¸ÃÂµ
     desc_match = re.search(r'PFX\s+Ersatzteilnummer\s+[^\n]+', text)
     if desc_match:
-        data['name'] = 'Ãâ€”ÃÂ°ÃÂ¿Ã‘â€¡ÃÂ°Ã‘ÂÃ‘â€šÃÂ¸ Volvo'
+        data['name'] = 'Volvo parts'
     else:
-        data['name'] = 'ÃÂ ÃÂµÃÂ¼ÃÂ¾ÃÂ½Ã‘â€š Volvo'
+        data['name'] = 'Volvo service'
     
     data['amount'] = 1
     data['price'] = 0.0
     
-    # ÃÅ¾ÃÂ±Ã‘â€°ÃÂ°Ã‘Â Ã‘ÂÃ‘Æ’ÃÂ¼ÃÂ¼ÃÂ°
-    total_match = re.search(r'Gesamt\s+EUR\s+([\d,.]+)', text)
-    if total_match:
-        total_str = total_match.group(1).replace(',', '.')
-        data['total_price'] = float(total_str)
+    # Use net total for external supplier invoices.
+    net_total = extract_volvo_net_total(text)
+    if net_total > 0:
+        data['total_price'] = net_total
     else:
-        return None
+        total_match = re.search(r'Gesamt\s+EUR\s+([\d.]+,\d{2})', text, re.IGNORECASE)
+        if total_match:
+            data['total_price'] = parse_euro_amount(total_match.group(1))
+        else:
+            return None
     
     data['seller'] = 'Volvo Group Trucks Service Nord GmbH'
     data['buyer'] = 'Auto Compass GmbH'
@@ -1708,7 +1743,7 @@ def extract_data_by_supplier(text, supplier, filename):
         'Euromaster': extract_euromaster,
         'MAN': extract_man,
         'SchÃ¼tt': extract_schutt,
-        'Volvo': extract_volvo,
+        'Volvo': lambda t: extract_volvo(t, filename),
         'Sotecs': extract_sotecs,
         'Express': extract_express,
         'K&L': extract_kl,
