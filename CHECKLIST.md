@@ -89,6 +89,11 @@
 - [x] Fix Scania `SCHWM02670`: truck must be extracted from `AMTL.KENNZ: GR-OO 1511` as `GR-OO1511`.
 - [x] Fix Scania `SCHPM01041`: extract `Kennzeichen` rows such as `GR-OO2456`, `GR-OO2459`, `GR-OO2458`, `GR-OO2457` and write one report row per truck.
 - [x] Fix Scania invoice-date priority so vehicle header dates are not used as invoice dates.
+- [x] Verify Scania `SCHWM02656`: invoice date must be `23/03/2026` from `RE-DATUM`, not vehicle header date `18/10/2022`.
+- [x] Verify Scania `SCHWM03267`: invoice date must be `10/04/2026` from `RE-DATUM`, not vehicle header date `17/01/2011`.
+- [x] Fix Scania Finance `SRD1041342`: invoice must be `SRD1041342`, truck must be `KO-HH322`, total must be read from `Netto gesamt (EUR)`.
+- [x] Fix Scania `SCHWM03372`: invoice must be `SCHWM03372`, not `47322-1-1-01`, and truck must be `GR-OO8003`.
+- [x] Add shared truck normalization for `KO-HH` numbers.
 - Gutschrift → отрицательная сумма
 - Результат: Excel в Telegram + данные в PostgreSQL + PDF перемещён
 - Неразобранные → `manual/` для ручной обработки или обучения промпта

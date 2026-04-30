@@ -1229,6 +1229,7 @@ def extract_tankpool24(text):
 
 
 SCANIA_INVOICE_RE = re.compile(r"\b(SCH[A-Z]{2}\d{4,})\b", re.IGNORECASE)
+SCANIA_FINANCE_INVOICE_RE = re.compile(r"\b(SRD\d{4,})\b", re.IGNORECASE)
 
 
 def extract_invoice_hint_from_text(*values):
@@ -1241,6 +1242,10 @@ def extract_invoice_hint_from_text(*values):
         scania_match = SCANIA_INVOICE_RE.search(source)
         if scania_match:
             return scania_match.group(1).upper()
+
+        scania_finance_match = SCANIA_FINANCE_INVOICE_RE.search(source)
+        if scania_finance_match:
+            return scania_finance_match.group(1).upper()
 
         generic_patterns = [
             r"\b(RE\d{4,}-\d+)\b",
@@ -1312,6 +1317,7 @@ def extract_scania_total_net(text, line_items=None):
     patterns = [
         r"NETTOBETRAG[^\n]*\n\s*EUR\s+([\d.]+,\d{2})",
         r"Nettobetrag[^\n]*\n\s*\*?\d*\s*([\d.]+,\d{2})",
+        r"Netto\s+gesamt\s*\(EUR\)\s*:?\s*([\d.]+,\d{2})",
         r"Zwischensumme:\s*([\d.]+,\d{2})",
         r"NETTOBETRAG[^\d]+EUR\s+([\d.]+,\d{2})",
         r"Gesamt[^\d]+([\d.]+,\d{2})",
@@ -1417,6 +1423,8 @@ def extract_scania(text, filename):
         invoice_match = SCANIA_INVOICE_RE.search(text)
         if not invoice_match:
             invoice_match = re.search(r'SCH_(SCH[A-Z]{2}\d{4,})_', text, re.IGNORECASE)
+        if not invoice_match:
+            invoice_match = SCANIA_FINANCE_INVOICE_RE.search(text)
         if invoice_match:
             invoice_value = invoice_match.group(1).upper()
 
@@ -1470,8 +1478,12 @@ def extract_scania(text, filename):
         if not data.get('truck'):
             data['truck'] = line_items[0].get('truck', '')
     
-    data['seller'] = 'Scania Vertrieb und Service GmbH'
-    data['buyer'] = 'Auto Compass GmbH'
+    if 'SCANIA FINANCE' in str(text or '').upper():
+        data['seller'] = 'Scania Finance Deutschland GmbH'
+        data['buyer'] = 'Groo GmbH'
+    else:
+        data['seller'] = 'Scania Vertrieb und Service GmbH'
+        data['buyer'] = 'Auto Compass GmbH'
     
     return data
 

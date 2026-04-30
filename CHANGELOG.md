@@ -2,6 +2,9 @@
 
 ## 2026-04-30
 
+- Added Scania Finance `SRD...` invoice support, including `Kennzeichen: KO-HH 322` truck normalization and `Netto gesamt (EUR)` total extraction.
+- Added `KO-HH` truck-number normalization to the shared truck reference module.
+- Verified Scania regressions for `SCHWM02656`, `SCHWM03267`, and `SCHWM03372`: invoice dates now come from `RE-DATUM`, and Scania `AUFTRAGS-NR.` values are not used as invoice numbers.
 - Added a dedicated `Problem Invoices` sheet to processing reports with invoice number, source file, status, reason, missing fields, supplier, date, truck, total, and AI notes.
 - Added problematic invoice details to the Telegram final summary so failed and partial invoices are visible without opening the Excel file.
 - Fixed Scania classification when OCR contains `#splminfo` and `SCH...` invoice numbers but not the word `SCANIA` near the top of the document.
