@@ -163,6 +163,10 @@ def identify_supplier(text):
     # Vital Projekt
     if 'VITAL PROJEKT' in text_start:
         return 'Vital Projekt'
+
+    # Pentoplus Truck Wash
+    elif 'PENTOPLUS TRUCK WASH' in text_upper or 'V-RE' in text_start and 'NUMMERNSCHILD' in text_upper:
+        return 'Pentoplus Truck Wash'
     
     # K&L
     elif 'K&L KFZ MEISTERBETRIEB' in text_start or 'K&L-KFZ' in text_start:
@@ -364,6 +368,8 @@ def extract_autocompass(text, filename):
     # ÐœÐ°ÑˆÐ¸Ð½Ð° - ÑƒÐ»ÑƒÑ‡ÑˆÐµÐ½Ð½Ñ‹Ðµ Ð¿Ð°Ñ‚Ñ‚ÐµÑ€Ð½Ñ‹
     truck_match = re.search(r'Kennzeichen\s+([A-Z]{2}-[A-Z]{2}\s*\d+)', text)
     if not truck_match:
+        truck_match = re.search(r'Kennzeichen[^\n]*\n\s*([A-Z]{2}-[A-Z]{2,4}\s*\d+)', text)
+    if not truck_match:
         # ÐÐ¾Ð²Ñ‹Ð¹ Ð¿Ð°Ñ‚Ñ‚ÐµÑ€Ð½: "Kennzeichen Fahrgestell-Nr. ... HH-AG 1926"
         truck_match = re.search(r'Kennzeichen[^\n]*\n[^\n]*\n([A-Z]{2}-[A-Z]{2,4}\s*\d+)', text)
     if not truck_match:
@@ -407,6 +413,18 @@ def extract_autocompass(text, filename):
         if not gesamt_match:
             # ÐŸÐ°Ñ‚Ñ‚ÐµÑ€Ð½ 3: ÐŸÑ€Ð¾ÑÑ‚Ð¾Ð¹ "Gesamt XXX,XX â‚¬"
             gesamt_match = re.search(r'Gesamt\s+([\d,.]+)\s*â‚¬', text)
+        if not gesamt_match:
+            gesamt_match = re.search(
+                r'Lohn\s+Material\s+Fremdleistung\s+Auslagen\s*\n\s*(?:[\d,.]+\s*€\s+){4}([\d,.]+)\s*€',
+                text,
+                re.IGNORECASE,
+            )
+        if not gesamt_match:
+            gesamt_match = re.search(
+                r'Gesamt\s*\n(?:[^\n]*\n)?\s*(?:[\d,.]+\s*€\s+){4}([\d,.]+)\s*€',
+                text,
+                re.IGNORECASE,
+            )
         
         if gesamt_match:
             total_str = gesamt_match.group(1).replace('.', '').replace(',', '.')
@@ -442,6 +460,100 @@ def extract_autocompass(text, filename):
         else:
             return None
     
+    return data
+
+
+def extract_pentoplus_truck_wash(text, filename):
+    """Pentoplus Truck Wash invoices with delivery-note truck numbers."""
+    data = {}
+    source = str(text or "")
+    lines = source.splitlines()
+
+    invoice_match = re.search(r'Rechnung\s+(V-RE\d+)', source, re.IGNORECASE)
+    if not invoice_match:
+        invoice_match = re.search(r'\b(V-RE\d+)\b', source, re.IGNORECASE)
+    if not invoice_match:
+        return None
+    data['invoice'] = invoice_match.group(1).upper()
+
+    date_match = re.search(r'Rechnungsdatum:\s*(\d{2}\.\d{2}\.\d{4})', source, re.IGNORECASE)
+    if not date_match:
+        date_match = re.search(r'Belegdatum:\s*(\d{2}\.\d{2}\.\d{4})', source, re.IGNORECASE)
+    if not date_match:
+        return None
+    data['date'] = date_match.group(1)
+
+    try:
+        date_obj = datetime.strptime(data['date'], '%d.%m.%Y')
+        data['month'] = date_obj.month
+        data['week'] = date_obj.isocalendar()[1]
+    except ValueError:
+        return None
+
+    total_match = re.search(r'Betrag\s+Netto\s+([\d.]+,\d{2})', source, re.IGNORECASE)
+    if not total_match:
+        total_match = re.search(r'Netto(?:betrag)?[^\d]+([\d.]+,\d{2})', source, re.IGNORECASE)
+    if total_match:
+        data['total_price'] = parse_euro_amount(total_match.group(1))
+    else:
+        return None
+
+    delivery_trucks = {}
+    current_delivery = None
+    for line in lines:
+        delivery_match = re.search(r'Leistungsnachweis\s+(VL\d{2}-\d+)', line, re.IGNORECASE)
+        if delivery_match:
+            current_delivery = delivery_match.group(1).upper()
+            continue
+
+        if current_delivery and 'NUMMERNSCHILD' in line.upper():
+            truck = extract_normalized_truck_number(line)
+            if truck:
+                delivery_trucks[current_delivery] = truck
+            current_delivery = None
+
+    line_items = []
+    seen_deliveries = set()
+    for index, line in enumerate(lines):
+        delivery_match = re.search(r'Lieferungsnr\.?\s+(VL\d{2}-\d+):', line, re.IGNORECASE)
+        if not delivery_match:
+            continue
+
+        delivery_no = delivery_match.group(1).upper()
+        if delivery_no in seen_deliveries:
+            continue
+        seen_deliveries.add(delivery_no)
+
+        detail_line = ''
+        for next_line in lines[index + 1:index + 4]:
+            if re.search(r'\b1,00\s+[\d.]+,\d{2}', next_line):
+                detail_line = next_line
+                break
+
+        price_match = re.search(r'\b1,00\s+([\d.]+,\d{2})', detail_line)
+        total_price = parse_euro_amount(price_match.group(1)) if price_match else 0.0
+        description = 'wash service'
+        if 'Transporter' in detail_line:
+            description = 'wash service transporter'
+
+        line_items.append({
+            'truck': delivery_trucks.get(delivery_no, ''),
+            'name': description,
+            'category': 'Wash',
+            'total_price': total_price,
+        })
+
+    data['line_items'] = line_items
+    data['truck'] = next((item.get('truck', '') for item in line_items if item.get('truck')), '')
+    if not data['truck']:
+        data['truck'] = extract_normalized_truck_number(source) or extract_truck_from_filename(filename) or ''
+
+    data['name'] = 'wash service'
+    data['amount'] = 1
+    data['price'] = 0.0
+    data['seller'] = 'Pentoplus Truck Wash GmbH & Co. KG'
+    data['buyer'] = 'Groo GmbH'
+
     return data
 
 
@@ -1588,6 +1700,7 @@ def extract_data_by_supplier(text, supplier, filename):
         'Auto Compass (Internal)': lambda t: extract_autocompass(t, filename),
         'Scania External': lambda t: extract_scania(t, filename),
         'Scania': lambda t: extract_scania(t, filename),
+        'Pentoplus Truck Wash': lambda t: extract_pentoplus_truck_wash(t, filename),
         'Vital Projekt': extract_vital_projekt,
         'Ferronordic': extract_ferronordic,
         'HNS': extract_hns,

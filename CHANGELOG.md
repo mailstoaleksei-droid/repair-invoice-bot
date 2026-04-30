@@ -2,6 +2,8 @@
 
 ## 2026-04-30
 
+- Fixed Auto Compass internal invoices such as `700415` to extract truck numbers from one-line header layouts like `Kennzeichen ...` followed by `GR-OO 4501`, and added support for euro-symbol total rows.
+- Added Pentoplus Truck Wash `V-RE...` invoice support with delivery-note mapping from `Lieferungsnr.` to `Leistungsnachweis` / `Nummernschild`, so wash rows can include trucks such as `GR-OO2456`.
 - Added Scania Finance `SRD...` invoice support, including `Kennzeichen: KO-HH 322` truck normalization and `Netto gesamt (EUR)` total extraction.
 - Added `KO-HH` truck-number normalization to the shared truck reference module.
 - Verified Scania regressions for `SCHWM02656`, `SCHWM03267`, and `SCHWM03372`: invoice dates now come from `RE-DATUM`, and Scania `AUFTRAGS-NR.` values are not used as invoice numbers.

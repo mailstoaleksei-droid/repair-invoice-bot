@@ -94,6 +94,8 @@
 - [x] Fix Scania Finance `SRD1041342`: invoice must be `SRD1041342`, truck must be `KO-HH322`, total must be read from `Netto gesamt (EUR)`.
 - [x] Fix Scania `SCHWM03372`: invoice must be `SCHWM03372`, not `47322-1-1-01`, and truck must be `GR-OO8003`.
 - [x] Add shared truck normalization for `KO-HH` numbers.
+- [x] Fix Auto Compass `700415`: extract truck `GR-OO4501` from `Kennzeichen GR-OO 4501` style layouts.
+- [x] Fix Pentoplus Truck Wash `V-RE002079`: extract truck numbers from `Nummernschild`, including `GR-OO2456`, and map them to wash line items.
 - Gutschrift → отрицательная сумма
 - Результат: Excel в Telegram + данные в PostgreSQL + PDF перемещён
 - Неразобранные → `manual/` для ручной обработки или обучения промпта
