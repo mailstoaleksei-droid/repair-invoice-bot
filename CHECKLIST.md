@@ -1,6 +1,6 @@
 # Repair Invoice Processor — Checklist
 
-> Last updated: 2026-02-18
+> Last updated: 2026-04-30
 > Status legend: [ ] pending | [~] in progress | [x] done | [-] skipped
 
 ---
@@ -78,6 +78,17 @@
 - AI (GPT-4o-mini) извлекает данные из ЛЮБОГО поставщика без regex
 - Сканы обрабатываются через Vision API (изображение → данные)
 - Один счёт = один PDF (1-10 страниц), но может содержать несколько машин
+- Общий Excel-отчет содержит лист `Problem Invoices` для ручной проверки частичных, ошибочных и необработанных счетов.
+- Scania parser должен брать invoice из `RE-NR.` / `SCH...`, truck из `AMTL.KENNZ` / `Kennzeichen`, а не использовать `AUFTRAGS-NR.` как номер счета.
+
+## 2026-04-30 Updates
+
+- [x] Add `Problem Invoices` sheet to processing report with invoice numbers for partial, failed, duplicate, and unprocessed PDFs.
+- [x] Add problematic invoice list to the Telegram final summary.
+- [x] Fix Scania `SCHWM02670`: invoice must be `SCHWM02670`, not `47321-1-1-01`.
+- [x] Fix Scania `SCHWM02670`: truck must be extracted from `AMTL.KENNZ: GR-OO 1511` as `GR-OO1511`.
+- [x] Fix Scania `SCHPM01041`: extract `Kennzeichen` rows such as `GR-OO2456`, `GR-OO2459`, `GR-OO2458`, `GR-OO2457` and write one report row per truck.
+- [x] Fix Scania invoice-date priority so vehicle header dates are not used as invoice dates.
 - Gutschrift → отрицательная сумма
 - Результат: Excel в Telegram + данные в PostgreSQL + PDF перемещён
 - Неразобранные → `manual/` для ручной обработки или обучения промпта

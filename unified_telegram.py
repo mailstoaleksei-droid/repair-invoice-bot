@@ -243,6 +243,7 @@ class NotificationFormatter:
         ai_count = summary.get('ai', 0)
         reason_breakdown = summary.get('reason_breakdown', {})
         partial_breakdown = summary.get('partial_breakdown', {})
+        problem_items = summary.get('problem_items', [])
         report_path = summary.get('report_path')
         
         message = (
@@ -275,6 +276,19 @@ class NotificationFormatter:
                 reason_breakdown,
                 NotificationFormatter.humanize_reason_code,
             )
+
+        if problem_items:
+            message += "\n\n📋 <b>Problemnye scheta:</b>\n"
+            for item in problem_items[:10]:
+                invoice = item.get('invoice') or 'N/A'
+                filename = item.get('filename') or ''
+                reason = item.get('missing_fields') or item.get('reason') or item.get('status') or 'review'
+                message += f"• {invoice}: {reason}"
+                if filename:
+                    message += f" ({filename[:45]})"
+                message += "\n"
+            if len(problem_items) > 10:
+                message += f"• ... eshche {len(problem_items) - 10}\n"
 
         if report_path:
             message += f"\n\n📁 Otchet: <code>{os.path.basename(report_path)}</code>"

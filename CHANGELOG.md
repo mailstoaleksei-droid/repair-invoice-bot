@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-04-30
+
+- Added a dedicated `Problem Invoices` sheet to processing reports with invoice number, source file, status, reason, missing fields, supplier, date, truck, total, and AI notes.
+- Added problematic invoice details to the Telegram final summary so failed and partial invoices are visible without opening the Excel file.
+- Fixed Scania classification when OCR contains `#splminfo` and `SCH...` invoice numbers but not the word `SCANIA` near the top of the document.
+- Fixed Scania invoice extraction to prefer `RE-NR.` / `SCH...` invoice numbers and avoid using `AUFTRAGS-NR.` values such as `47321-1-1-01`.
+- Fixed Scania truck extraction for `AMTL.KENNZ: GR-OO 1511` and maintenance-contract `Kennzeichen: GR-OO 2456` style lines.
+- Added multi-truck Scania Wartungsvertrag parsing so one invoice can produce one Excel row per truck with the matching per-truck amount.
+- Fixed Scania invoice-date priority to avoid taking vehicle header dates instead of `RE-DATUM`.
+
 ## 2026-04-28
 
 - Added dynamic path configuration so the project can run from `AI\Repair Eingang Bot` while still processing files in `Eingangs Rechnungen\EingangsRG`.

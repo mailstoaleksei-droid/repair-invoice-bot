@@ -168,15 +168,18 @@ def identify_supplier(text):
     elif 'K&L KFZ MEISTERBETRIEB' in text_start or 'K&L-KFZ' in text_start:
         return 'K&L'
     
-    # Auto Compass Internal
-    elif 'AUTO COMPASS' in text_start and ('KOPIE' in text or 'RANDERSWEIDE' in text):
-        return 'Auto Compass (Internal)'
-    
     # Scania External (ÃÂ²ÃÂ½ÃÂµÃ‘Ë†ÃÂ½ÃÂ¸ÃÂµ Ã‘ÂÃ‘â€¡ÃÂµÃ‘â€šÃÂ°)
-    elif ('#SPLMINFO' in text_start and 'SCANIA' in text_start) or (
+    elif ('#SPLMINFO' in text_start and re.search(r'\bSCH[A-Z]{2}\d{4,}\b', text_upper)) or (
+        re.search(r'\bSCH[A-Z]{2}\d{4,}\b', text_upper)
+        and any(marker in text_upper for marker in ('RE-NR.', 'AUFTRAGS-NR.', 'AMTL.KENNZ', 'SC/WE EXTERN', 'KENNZEICHEN'))
+    ) or (
         'SCANIA' in text_start and any(marker in text_upper for marker in ('RE-NR.', 'AUFTRAGS-NR.', 'AMTL.KENNZ', 'SC/WE EXTERN'))
     ):
         return 'Scania External'
+
+    # Auto Compass Internal
+    elif 'AUTO COMPASS' in text_start and ('KOPIE' in text or 'RANDERSWEIDE' in text):
+        return 'Auto Compass (Internal)'
     
     # Ferronordic
     elif 'FERRONORDIC' in text_start:
@@ -1225,6 +1228,43 @@ def extract_tankpool24(text):
 # ===== ÃÅ¡Ãâ€ºÃÂÃÂ¡ÃÂ¡ÃËœÃÂ¤ÃËœÃÅ¡ÃÂÃÂ¢ÃÅ¾ÃÂ  =====
 
 
+SCANIA_INVOICE_RE = re.compile(r"\b(SCH[A-Z]{2}\d{4,})\b", re.IGNORECASE)
+
+
+def extract_invoice_hint_from_text(*values):
+    """Extract a likely invoice number for review/reporting from filenames or text."""
+    for value in values:
+        source = str(value or "")
+        if not source:
+            continue
+
+        scania_match = SCANIA_INVOICE_RE.search(source)
+        if scania_match:
+            return scania_match.group(1).upper()
+
+        generic_patterns = [
+            r"\b(RE\d{4,}-\d+)\b",
+            r"\b(U\d{2}/\d{5,})\b",
+            r"\b([A-Z]{2,5}\d{5,})\b",
+        ]
+        for pattern in generic_patterns:
+            match = re.search(pattern, source, flags=re.IGNORECASE)
+            if match:
+                return match.group(1).upper()
+
+    return ""
+
+
+def parse_euro_amount(value):
+    """Convert German formatted currency text to float."""
+    if value is None:
+        return 0.0
+    try:
+        return float(str(value).replace('.', '').replace(',', '.'))
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def extract_scania_invoice_from_re_nr(text):
     """Extract Scania invoice number with strong priority for the value under RE-NR."""
     lines = [line.strip() for line in str(text or "").splitlines()]
@@ -1266,6 +1306,106 @@ def extract_scania_invoice_from_re_nr(text):
     return ""
 
 
+def extract_scania_total_net(text, line_items=None):
+    """Extract Scania net total with priority for the invoice summary table."""
+    source = str(text or "")
+    patterns = [
+        r"NETTOBETRAG[^\n]*\n\s*EUR\s+([\d.]+,\d{2})",
+        r"Nettobetrag[^\n]*\n\s*\*?\d*\s*([\d.]+,\d{2})",
+        r"Zwischensumme:\s*([\d.]+,\d{2})",
+        r"NETTOBETRAG[^\d]+EUR\s+([\d.]+,\d{2})",
+        r"Gesamt[^\d]+([\d.]+,\d{2})",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, source, flags=re.IGNORECASE)
+        if match:
+            amount = parse_euro_amount(match.group(1))
+            if amount > 0:
+                return amount
+
+    if line_items:
+        total = sum(float(item.get('total_price') or 0) for item in line_items)
+        if total > 0:
+            return round(total, 2)
+
+    return 0.0
+
+
+def extract_scania_line_items(text, filename):
+    """Extract one Scania maintenance-contract row per Kennzeichen."""
+    source = str(text or "")
+    lines = source.splitlines()
+    items = []
+    seen = set()
+    is_contract = bool(re.search(r"Wartungsvertrag|Vertragsnr|Laufzeit|Rate\.", source, re.IGNORECASE))
+
+    for index, line in enumerate(lines):
+        if "KENNZEICHEN" not in line.upper():
+            continue
+
+        truck = extract_normalized_truck_number(line)
+        if not truck or truck in seen:
+            continue
+
+        price = 0.0
+        for lookback in range(max(0, index - 3), index + 1):
+            amounts = re.findall(r"\b([\d.]+,\d{2})\b", lines[lookback])
+            if amounts:
+                price = parse_euro_amount(amounts[-1])
+                if price > 0:
+                    break
+
+        seen.add(truck)
+        items.append({
+            'truck': truck,
+            'name': 'Wartungsvertrag maintenance contract' if is_contract else 'Scania service',
+            'category': 'Service',
+            'total_price': price,
+        })
+
+    if len(items) <= 1:
+        return []
+
+    total = extract_scania_total_net(source)
+    missing_prices = [item for item in items if not item.get('total_price')]
+    if missing_prices and total > 0:
+        per_item = round(total / len(items), 2)
+        for item in missing_prices:
+            item['total_price'] = per_item
+
+    return items
+
+
+def extract_scania_invoice_date(text, invoice_value=''):
+    """Extract the Scania invoice date, avoiding vehicle dates from the header."""
+    source = str(text or "")
+    escaped_invoice = re.escape(str(invoice_value or ""))
+    patterns = []
+    if escaped_invoice:
+        patterns.append(rf"Rechnung\s+\d+\s+{escaped_invoice}\s+(\d{{2}}\.\d{{2}}\.\d{{2,4}})")
+    patterns.extend([
+        r"RE-DATUM[^\n]*\n[^\n]*(\d{2}\.\d{2}\.\d{2,4})",
+        r"R\s*E\s*C\s*H\s*N\s*U\s*N\s*G[^\n]*(\d{2}\.\d{2}\.\d{2,4})",
+        r"\bRE-DATUM\b[^\d]*(\d{2}\.\d{2}\.\d{2,4})",
+    ])
+
+    for pattern in patterns:
+        match = re.search(pattern, source, flags=re.IGNORECASE)
+        if match:
+            return match.group(1)
+
+    spl_match = re.search(r"SCH_[A-Z]+_(\d{8})", source, flags=re.IGNORECASE)
+    if spl_match:
+        raw_date = spl_match.group(1)
+        return f"{raw_date[6:8]}.{raw_date[4:6]}.{raw_date[0:4]}"
+
+    generic_match = re.search(r"(\d{2})\.(\d{2})\.(\d{2,4})", source)
+    if generic_match:
+        return generic_match.group(0)
+
+    return ""
+
+
 def extract_scania(text, filename):
     """Scania - ÃÂ²ÃÂ½ÃÂµÃ‘Ë†ÃÂ½ÃÂ¸ÃÂµ Ã‘ÂÃ‘â€¡ÃÂµÃ‘â€šÃÂ° ÃÂ¾Ã‘â€š Scania"""
     data = {}
@@ -1273,11 +1413,10 @@ def extract_scania(text, filename):
     # ÃÂÃÂ¾ÃÂ¼ÃÂµÃ‘â‚¬ Ã‘ÂÃ‘â€¡Ã‘â€˜Ã‘â€šÃÂ° - Ð±ÐµÑ€ÐµÐ¼ Ð¸Ð¼ÐµÐ½Ð½Ð¾ RE-NR., Ð° Ð½Ðµ AUFTRAGS-NR.
     invoice_value = extract_scania_invoice_from_re_nr(text)
     if not invoice_value:
-        # ÃÂ¤ÃÂ¾ÃÂ»Ð±ÑÐº: Ð¾Ð±Ñ‰Ð¸Ð¹ SCHWL, ÐµÑÐ»Ð¸ RE-NR. Ð¿Ð¾Ñ‚ÐµÑ€ÑÐ»ÑÑ Ð² OCR
-        invoice_match = re.search(r'\b(SCHWL\d+)\b', text, re.IGNORECASE)
+        # Fallback: all Scania invoice prefixes, not the AUFTRAGS-NR.
+        invoice_match = SCANIA_INVOICE_RE.search(text)
         if not invoice_match:
-            # ÃÅ¸ÃÂ°Ã‘â€šÃ‘â€šÃÂµÃ‘â‚¬ÃÂ½ ÃÂ¸ÃÂ· splminfo Ã‘ÂÃ‘â€šÃ‘â‚¬ÃÂ¾ÃÂºÃÂ¸
-            invoice_match = re.search(r'SCH_(SCHWL\d+)_', text, re.IGNORECASE)
+            invoice_match = re.search(r'SCH_(SCH[A-Z]{2}\d{4,})_', text, re.IGNORECASE)
         if invoice_match:
             invoice_value = invoice_match.group(1).upper()
 
@@ -1286,30 +1425,11 @@ def extract_scania(text, filename):
     else:
         return None
     
-    # Ãâ€ÃÂ°Ã‘â€šÃÂ° - Ã‘Æ’ÃÂ»Ã‘Æ’Ã‘â€¡Ã‘Ë†ÃÂµÃÂ½ÃÂ½Ã‘â€¹ÃÂµ ÃÂ¿ÃÂ°Ã‘â€šÃ‘â€šÃÂµÃ‘â‚¬ÃÂ½Ã‘â€¹
-    # ÃÅ¸ÃÂ°Ã‘â€šÃ‘â€šÃÂµÃ‘â‚¬ÃÂ½ 1: "RE-DATUM ... 20.10.25"
-    date_match = re.search(r'RE-DATUM[^\n]*?(\d{2}\.\d{2}\.\d{2,4})', text)
-    if not date_match:
-        # ÃÅ¸ÃÂ°Ã‘â€šÃ‘â€šÃÂµÃ‘â‚¬ÃÂ½ 2: ÃÅ¾ÃÂ±Ã‘â€¹Ã‘â€¡ÃÂ½Ã‘â€¹ÃÂ¹ Ã‘â€žÃÂ¾Ã‘â‚¬ÃÂ¼ÃÂ°Ã‘â€š ÃÂ´ÃÂ°Ã‘â€šÃ‘â€¹
-        date_match = re.search(r'(\d{2})\.(\d{2})\.(\d{2,4})', text)
-    
-    if date_match:
-        if len(date_match.groups()) == 1:
-            # ÃÂ¤ÃÂ¾Ã‘â‚¬ÃÂ¼ÃÂ°Ã‘â€š DD.MM.YY ÃÂ¸ÃÂ»ÃÂ¸ DD.MM.YYYY
-            date_str = date_match.group(1)
-            parts = date_str.split('.')
-            if len(parts[2]) == 2:
-                # ÃÅ¸Ã‘â‚¬ÃÂµÃÂ¾ÃÂ±Ã‘â‚¬ÃÂ°ÃÂ·ÃÂ¾ÃÂ²ÃÂ°Ã‘â€šÃ‘Å’ YY ÃÂ² YYYY
-                year = f"20{parts[2]}"
-                date_str = f"{parts[0]}.{parts[1]}.{year}"
-        else:
-            # ÃÂ¤ÃÂ¾Ã‘â‚¬ÃÂ¼ÃÂ°Ã‘â€š ÃÂ¸ÃÂ· ÃÂ³Ã‘â‚¬Ã‘Æ’ÃÂ¿ÃÂ¿
-            day = date_match.group(1)
-            month = date_match.group(2)
-            year = date_match.group(3)
-            if len(year) == 2:
-                year = f"20{year}"
-            date_str = f"{day}.{month}.{year}"
+    date_str = extract_scania_invoice_date(text, invoice_value)
+    if date_str:
+        parts = date_str.split('.')
+        if len(parts) == 3 and len(parts[2]) == 2:
+            date_str = f"{parts[0]}.{parts[1]}.20{parts[2]}"
     else:
         return None
     
@@ -1321,59 +1441,36 @@ def extract_scania(text, filename):
     except:
         return None
     
-    # ÃÅ“ÃÂ°Ã‘Ë†ÃÂ¸ÃÂ½ÃÂ° - Ã‘Æ’ÃÂ»Ã‘Æ’Ã‘â€¡Ã‘Ë†ÃÂµÃÂ½ÃÂ½Ã‘â€¹ÃÂµ ÃÂ¿ÃÂ°Ã‘â€šÃ‘â€šÃÂµÃ‘â‚¬ÃÂ½Ã‘â€¹
-    # ÃÅ¸ÃÂ°Ã‘â€šÃ‘â€šÃÂµÃ‘â‚¬ÃÂ½ 1: "AMTL.KENNZ: GR-OO 1726"
-    truck_match = re.search(r'AMTL\.KENNZ:\s*([A-Z]{2}-[A-Z]{2,4}\s*\d+)', text)
-    if not truck_match:
-        # ÃÅ¸ÃÂ°Ã‘â€šÃ‘â€šÃÂµÃ‘â‚¬ÃÂ½ 2: "Kennzeichen ... GR-OO 1726"
-        truck_match = re.search(r'Kennzeichen[:\s]+([A-Z]{2}-[A-Z]{2,4}\s*\d+)', text)
-    if not truck_match:
-        # ÃÅ¸ÃÂ°Ã‘â€šÃ‘â€šÃÂµÃ‘â‚¬ÃÂ½ 3: ÃÅ¾ÃÂ±Ã‘â€°ÃÂ¸ÃÂ¹ ÃÂ¿ÃÂ°Ã‘â€šÃ‘â€šÃÂµÃ‘â‚¬ÃÂ½ ÃÂ½ÃÂ¾ÃÂ¼ÃÂµÃ‘â‚¬ÃÂ°
-        truck_match = re.search(r'([A-Z]{2}\s*[A-Z]{2}\s*\d+)', text)
-    
-    if truck_match:
-        truck_raw = truck_match.group(1)
-        data['truck'] = re.sub(r'\s+', '', truck_raw)
-        # ÃÂ¤ÃÂ¾Ã‘â‚¬ÃÂ¼ÃÂ°Ã‘â€šÃÂ¸Ã‘â‚¬ÃÂ¾ÃÂ²ÃÂ°Ã‘â€šÃ‘Å’ ÃÂºÃÂ°ÃÂº GR-OO1726
-        if len(data['truck']) >= 4 and '-' not in data['truck']:
-            data['truck'] = f"{data['truck'][:2]}-{data['truck'][2:]}"
+    line_items = extract_scania_line_items(text, filename)
+
+    labeled_truck_match = re.search(
+        r'(?:AMTL\.?\s*KENNZ|Kennzeichen)\s*:?\s*([A-Z]{2}[-\s]?[A-Z]{2,4}\s*\d{2,4})',
+        text,
+        re.IGNORECASE,
+    )
+    if labeled_truck_match:
+        data['truck'] = normalize_truck_candidate(labeled_truck_match.group(1))
     else:
-        data['truck'] = extract_truck_from_filename(filename) or ''
+        reference_trucks = extract_reference_trucks(text)
+        data['truck'] = reference_trucks[0] if reference_trucks else (extract_truck_from_filename(filename) or '')
     
     # ÃÅ¾ÃÂ¿ÃÂ¸Ã‘ÂÃÂ°ÃÂ½ÃÂ¸ÃÂµ
     data['name'] = 'Scania service'
     data['amount'] = 1
     data['price'] = 0.0
     
-    # ÃÅ¾ÃÂ±Ã‘â€°ÃÂ°Ã‘Â Ã‘ÂÃ‘Æ’ÃÂ¼ÃÂ¼ÃÂ° - ÃÅ¸ÃÂ ÃËœÃÅ¾ÃÂ ÃËœÃÂ¢Ãâ€¢ÃÂ¢ NETTO!
-    # ÃÅ¸ÃÂ°Ã‘â€šÃ‘â€šÃÂµÃ‘â‚¬ÃÂ½ 1: "NETTOBETRAG ... EUR XXX,XX" (Ãâ€™ÃÂ«ÃÂ¡ÃÂ¨ÃËœÃâ„¢ ÃÅ¸ÃÂ ÃËœÃÅ¾ÃÂ ÃËœÃÂ¢Ãâ€¢ÃÂ¢)
-    total_match = re.search(r'NETTOBETRAG[^\d]+EUR\s+([\d,.]+)', text)
-    if not total_match:
-        # ÃÅ¸ÃÂ°Ã‘â€šÃ‘â€šÃÂµÃ‘â‚¬ÃÂ½ 2: "LOHN NETTO: XXX,XX"
-        total_match = re.search(r'LOHN\s+NETTO:\s*([\d,.]+)', text)
-    if not total_match:
-        # ÃÅ¸ÃÂ°Ã‘â€šÃ‘â€šÃÂµÃ‘â‚¬ÃÂ½ 3: "SUMME TEILE: XXX,XX"
-        total_match = re.search(r'SUMME\s+TEILE:\s*([\d,]+)', text)
-    if not total_match:
-        # ÃÅ¸ÃÂ°Ã‘â€šÃ‘â€šÃÂµÃ‘â‚¬ÃÂ½ 4: "SUMME: XX PE XXX,XX"
-        total_match = re.search(r'SUMME:\s*\d+\s*PE\s*([\d,]+)', text)
-    if not total_match:
-        # ÃÅ¸ÃÂ°Ã‘â€šÃ‘â€šÃÂµÃ‘â‚¬ÃÂ½ 5: "SUMME EUR XXX,XX" (ÃÂ¼ÃÂ¾ÃÂ¶ÃÂµÃ‘â€š ÃÂ±Ã‘â€¹Ã‘â€šÃ‘Å’ BRUTTO - ÃÂ¾Ã‘ÂÃ‘â€šÃÂ¾Ã‘â‚¬ÃÂ¾ÃÂ¶ÃÂ½ÃÂ¾)
-        total_match = re.search(r'SUMME\s+EUR\s+([\d,.]+)', text)
-    if not total_match:
-        # ÃÅ¸ÃÂ°Ã‘â€šÃ‘â€šÃÂµÃ‘â‚¬ÃÂ½ 6: ÃÅ¾ÃÂ±Ã‘â€°ÃÂ¸ÃÂ¹ Gesamt
-        total_match = re.search(r'Gesamt[^\d]+([\d,.]+)', text)
-    
-    if total_match:
-        total_str = total_match.group(1).replace('.', '').replace(',', '.')
-        try:
-            data['total_price'] = float(total_str)
-        except:
-            return None
+    total_price = extract_scania_total_net(text, line_items)
+    if total_price > 0:
+        data['total_price'] = total_price
     else:
         return None
+
+    if line_items:
+        data['line_items'] = line_items
+        if not data.get('truck'):
+            data['truck'] = line_items[0].get('truck', '')
     
-    data['seller'] = 'Scania'
+    data['seller'] = 'Scania Vertrieb und Service GmbH'
     data['buyer'] = 'Auto Compass GmbH'
     
     return data
@@ -1778,6 +1875,7 @@ def build_report_row(filename, status, supplier='', data=None, reason='', duplic
     data = sanitize_extracted_data(data)
     business_rows = build_business_rows(data, supplier)
     first_business_row = business_rows[0] if business_rows else {}
+    invoice_value = data.get('invoice', '') or extract_invoice_hint_from_text(filename)
     return {
         'filename': filename,
         'status': status,
@@ -1786,7 +1884,7 @@ def build_report_row(filename, status, supplier='', data=None, reason='', duplic
         'duplicate': 'yes' if duplicate else 'no',
         'original_date': original_date or '',
         'supplier': normalize_party_name(supplier or data.get('seller', '')),
-        'invoice': data.get('invoice', ''),
+        'invoice': invoice_value,
         'date': first_business_row.get('date_invoice', format_invoice_date(data.get('date', ''))),
         'truck': first_business_row.get('truck', data.get('truck', '')),
         'work_name': first_business_row.get('name', data.get('name', '')),
@@ -1915,6 +2013,7 @@ def summarize_report_rows(report_rows):
     partial_breakdown = defaultdict(int)
     partial_count = 0
     processed_full = 0
+    problem_items = []
 
     for row in report_rows:
         status = row.get('status', '')
@@ -1928,6 +2027,13 @@ def summarize_report_rows(report_rows):
                 partial_count += 1
                 for field_code in missing_fields:
                     partial_breakdown[field_code] += 1
+                problem_items.append({
+                    'filename': row.get('filename', ''),
+                    'invoice': row.get('invoice', '') or extract_invoice_hint_from_text(row.get('filename', '')),
+                    'status': 'partial_review',
+                    'reason': 'missing_fields',
+                    'missing_fields': ','.join(missing_fields),
+                })
             else:
                 processed_full += 1
             continue
@@ -1937,12 +2043,20 @@ def summarize_report_rows(report_rows):
 
         if reason_code:
             reason_breakdown[reason_code] += 1
+        problem_items.append({
+            'filename': row.get('filename', ''),
+            'invoice': row.get('invoice', '') or extract_invoice_hint_from_text(row.get('filename', '')),
+            'status': status,
+            'reason': reason_code or status or 'unknown',
+            'missing_fields': '',
+        })
 
     return {
         'processed_full': processed_full,
         'partial': partial_count,
         'partial_breakdown': dict(partial_breakdown),
         'reason_breakdown': dict(reason_breakdown),
+        'problem_items': problem_items,
     }
 
 
@@ -2030,6 +2144,22 @@ def save_run_report(report_rows):
         ]
         ws_review.append(review_headers)
 
+        ws_problem = wb.create_sheet("Problem Invoices")
+        problem_headers = [
+            'Invoice',
+            'Source File',
+            'Review Status',
+            'Current Status',
+            'Reason Code',
+            'Missing Fields',
+            'Supplier',
+            'Date',
+            'Truck',
+            'Total Price',
+            'AI Notes',
+        ]
+        ws_problem.append(problem_headers)
+
         ws_validation = wb.create_sheet("Validation")
         validation_headers = [
             'Source File',
@@ -2081,6 +2211,19 @@ def save_run_report(report_rows):
                     row.get('ai_confidence', ''),
                     row.get('ai_notes', ''),
                 ])
+                ws_problem.append([
+                    row.get('invoice', '') or extract_invoice_hint_from_text(row.get('filename', '')),
+                    row.get('filename', ''),
+                    review_status,
+                    row.get('status', ''),
+                    row.get('reason_code', ''),
+                    missing_fields,
+                    row.get('supplier', ''),
+                    row.get('date', ''),
+                    row.get('truck', ''),
+                    row.get('total_price', 0),
+                    row.get('ai_notes', ''),
+                ])
 
             ws_validation.append([
                 row.get('filename', ''),
@@ -2103,7 +2246,7 @@ def save_run_report(report_rows):
                 row.get('ai_notes', ''),
             ])
 
-        for sheet in (ws, ws_review, ws_validation):
+        for sheet in (ws, ws_review, ws_problem, ws_validation):
             for column in sheet.columns:
                 max_length = 0
                 column_letter = column[0].column_letter
@@ -2778,6 +2921,7 @@ def process_all_pdfs():
             'ai': ai_count,
             'reason_breakdown': report_summary['reason_breakdown'],
             'partial_breakdown': report_summary['partial_breakdown'],
+            'problem_items': report_summary['problem_items'],
             'report_path': report_path,
             'mode': PROCESSING_MODE,
         }
